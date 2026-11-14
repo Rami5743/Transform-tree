@@ -103,6 +103,7 @@ export function extractRows(text) {
   const rows = [];
   const wrappers = [];
   const taken = [];
+  let first = Infinity, last = 0;
 
   for (const m of [...text.matchAll(RE_START)]) {
     const end = matchTemplateEnd(text, m.index);
@@ -110,6 +111,8 @@ export function extractRows(text) {
     const inner = text.slice(m.index + m[0].length, end - 2);
     wrappers.push({ kind: m[1], inner: inner.replace(/^\|/, '') });
     taken.push([m.index, end]);
+    first = Math.min(first, m.index);
+    last = Math.max(last, end);
   }
 
   for (const m of [...text.matchAll(RE_ROW)]) {
@@ -119,8 +122,13 @@ export function extractRows(text) {
     let inner = text.slice(m.index + m[0].length, end - 2);
     inner = inner.replace(/^\|/, '');
     rows.push(inner);
+    first = Math.min(first, m.index);
+    last = Math.max(last, end);
   }
-  return { rows, wrappers };
+  // הטקסט שעוטף את העץ — מקרא, קטגוריות, תיעוד — נשמר כדי שלא יאבד בהמרה
+  const before = rows.length ? text.slice(0, first) : '';
+  const after = rows.length ? text.slice(last) : '';
+  return { rows, wrappers, before, after };
 }
 
 /* ------------------------------------------------------------------ *
@@ -209,6 +217,33 @@ function matchNamed(target, cand, opts) {
   return { name, params };
 }
 
+/** בונה קריאה ל{{קטע}} עם סגנון, עובי וצבע לפי הקטע המבוקש. */
+function segCall(dir, seg, opts) {
+  const parts = ['קטע', dir];
+  if (seg.s !== 'solid') parts.push('סגנון=' + styleName(seg.s));
+  if (opts.lineWidth) parts.push('עובי=' + opts.lineWidth);
+  if (seg.col != null) parts.push('צבע=' + seg.col);
+  return '{{' + parts.join('|') + '}}';
+}
+
+/** בונה קריאה ל{{פינה}}. */
+function cornerCall(n, seg, opts) {
+  const parts = ['פינה', n];
+  if (seg.s !== 'solid') parts.push('סגנון=' + styleName(seg.s));
+  parts.push('עובי=' + (opts.lineWidth || '2פק'));
+  if (seg.col != null) parts.push('צבע=' + seg.col);
+  if (opts.cornerRadius) parts.push('עיגול=' + opts.cornerRadius);
+  return '{{' + parts.join('|') + '}}';
+}
+
+const SPACER = '{{ממלא מקום|גובה=2את|רוחב=2את}}';
+
+/** האם כל קטעי המרצפת זהים בסגנונם ובצבעם. */
+function uniform(t) {
+  const segs = DIRS.map((d) => t[d]).filter(Boolean);
+  return segs.every((x) => x.s === segs[0].s && x.col === segs[0].col);
+}
+
 /**
  * מרצפת T של קו אחים: קו מאוזן ישר שעובר דרך המרצפת, ועליו פינה מעוגלת
  * אחת היורדת ממנו למטה.
@@ -221,28 +256,33 @@ function matchNamed(target, cand, opts) {
  * פינה 3 כשהוא מימין.
  */
 function composedTee(target, side, opts) {
-  const h = target.l || target.r;
-  const v = target.d;
-  const width = opts.lineWidth || '2פק';
+  return segCall('46', target.l || target.r, opts) + SPACER +
+    cornerCall(side === 'l' ? '1' : '3', target.d, opts);
+}
 
-  const seg = ['קטע', '46'];
-  if (h.s !== 'solid') seg.push('סגנון=' + styleName(h.s));
-  if (opts.lineWidth) seg.push('עובי=' + opts.lineWidth);
-  if (h.col != null) seg.push('צבע=' + h.col);
+/**
+ * מרצפת שקו אנכי עובר דרכה ויוצא ממנה ענף מאוזן אחד או שניים: ")", "(" ו-"+".
+ *
+ * גם כאן המרצפות המעוגלות הקיימות אינן מתאימות: ")ע" בנויה משתי פינות
+ * המתמזגות אל הענף השמאלי, ולכן הקו האנכי נשבר; ול-"+" אין כלל גרסה מעוגלת.
+ * במקומן נבנית המרצפת מ{{קטע|28}} — קו אנכי ישר — ומפינה לכל ענף מאוזן,
+ * המעוגלת אל עבר המקור שממנו מגיע הקו האנכי.
+ */
+function composedCross(target, from, opts) {
+  const out = [segCall('28', target.u || target.d, opts), SPACER];
+  if (target.l) out.push(cornerCall(from === 'u' ? '7' : '1', target.l, opts));
+  if (target.r) out.push(cornerCall(from === 'u' ? '9' : '3', target.r, opts));
+  return out.join('');
+}
 
-  const corner = ['פינה', side === 'l' ? '1' : '3'];
-  if (v.s !== 'solid') corner.push('סגנון=' + styleName(v.s));
-  corner.push('עובי=' + width);
-  if (v.col != null) corner.push('צבע=' + v.col);
-  if (opts.cornerRadius) corner.push('עיגול=' + opts.cornerRadius);
-
-  return '{{' + seg.join('|') + '}}{{ממלא מקום|גובה=2את|רוחב=2את}}{{' + corner.join('|') + '}}';
+/** צורת מרצפת שקו אנכי עובר דרכה ויוצא ממנה ענף מאוזן. */
+function isCross(t) {
+  return Boolean(t.u && t.d && (t.l || t.r) && uniform(t));
 }
 
 /** האם צורת הקטעים היא T של קו אחים: מאוזן מלא ועוד קו יורד. */
 function isTee(t) {
-  if (!t.l || !t.r || !t.d || t.u) return false;
-  return t.l.s === t.r.s && t.l.s === t.d.s && t.l.col === t.r.col && t.l.col === t.d.col;
+  return Boolean(t.l && t.r && t.d && !t.u && uniform(t));
 }
 
 /**
@@ -312,6 +352,7 @@ export const DEFAULT_OPTIONS = {
   newColor: '{{תרשים/הגדרות|נישואין}}',
   keepLineWidth: true,
   keepRowStyle: true,
+  keepSurrounding: true,
   wrap: true
 };
 
@@ -332,7 +373,7 @@ export function convert(input, userOpts = {}) {
   const warnings = [];
   const warn = (msg) => { if (!warnings.includes(msg)) warnings.push(msg); };
 
-  const { rows: rawRows, wrappers } = extractRows(input || '');
+  const { rows: rawRows, wrappers, before, after } = extractRows(input || '');
   for (const w of wrappers) {
     if ((w.kind === 'התחלה' || w.kind === 'start') && w.inner.trim()) {
       const { named } = parseRow(w.inner);
@@ -425,11 +466,14 @@ export function convert(input, userOpts = {}) {
         if (hadDash && dashStyle && opts.replaceDashes) {
           warn('הפרמטר "סגנון_מקווקו" נזנח משום שהקווים המקווקווים הוחלפו בקווים צבועים.');
         }
+        // מרצפות שצורתן המעוגלת תלויה בהקשר מקבלות כאן צורה לא מעוגלת,
+        // והן מוכרעות שוב לאחר שכל הטבלה נבנתה
         const tee = opts.round && isTee(target);
+        const cross = opts.round && !tee && isCross(target);
         cells.push({
-          type: 'tile', width: 1, segs: target, tee,
-          // מרצפת T מקבלת כאן צורה לא מעוגלת; היא מוכרעת שוב בסוף השורה
-          wiki: tileWiki(target, tee ? { ...tileOpts, round: false } : tileOpts)
+          type: 'tile', width: 1, segs: target, tee, cross,
+          tileOpts: tee || cross ? tileOpts : undefined,
+          wiki: tileWiki(target, tee || cross ? { ...tileOpts, round: false } : tileOpts)
         });
         nTiles++;
       } else {
@@ -453,18 +497,6 @@ export function convert(input, userOpts = {}) {
         nBoxes++;
       }
     }
-    // כעת, משידועה כל השורה, אפשר לקבוע לאיזה צד פונה הפינה של כל מרצפת T
-    for (let i = 0; i < cells.length; i++) {
-      if (!cells[i].tee) continue;
-      const side = teeSide(cells, i);
-      if (side) {
-        cells[i].wiki = composedTee(cells[i].segs, side, tileOpts);
-        cells[i].corner = side;
-      } else {
-        warn('מרצפת "ז" שלא נמצא לה הפיצול שממנו יוצא הקו נותרה ללא עיגול פינות, כדי שהקו המאוזן לא יישבר.');
-      }
-    }
-
     grid.push(cells);
   }
 
@@ -477,9 +509,50 @@ export function convert(input, userOpts = {}) {
     }
   }
 
+  // --- הכרעת המרצפות המעוגלות התלויות בהקשר ---
+  // מפת עמודות: לכל שורה, איזה תא מכסה כל עמודה (תיבה מכסה שלוש)
+  const byColumn = grid.map((row) => {
+    const map = [];
+    for (const cell of row) for (let k = 0; k < cell.width; k++) map.push(cell);
+    return map;
+  });
+  /** האם התא מזין קו בכיוון הנתון — תיבה מזינה תמיד. */
+  const feeds = (cell, dir) => Boolean(cell && (cell.type === 'box' || (cell.segs && cell.segs[dir])));
+
+  for (let r = 0; r < grid.length; r++) {
+    let col = 0;
+    for (let i = 0; i < grid[r].length; i++) {
+      const cell = grid[r][i];
+      if (cell.tee) {
+        const side = teeSide(grid[r], i);
+        if (side) {
+          cell.wiki = composedTee(cell.segs, side, cell.tileOpts);
+          cell.corner = side;
+        } else {
+          warn('מרצפת "ז" שלא נמצא לה הפיצול שממנו יוצא הקו נותרה ללא עיגול פינות, כדי שהקו המאוזן לא יישבר.');
+        }
+      } else if (cell.cross) {
+        const up = feeds(r > 0 ? byColumn[r - 1][col] : null, 'd');
+        const down = feeds(r < grid.length - 1 ? byColumn[r + 1][col] : null, 'u');
+        // בעץ משפחה הקו זורם כלפי מטה, ולכן כששני הצדדים מחוברים המקור הוא מלמעלה
+        const from = up ? 'u' : down ? 'd' : null;
+        if (from) {
+          cell.wiki = composedCross(cell.segs, from, cell.tileOpts);
+          cell.corner = from;
+        } else {
+          warn('מרצפת שקו אנכי עובר דרכה נותרה ללא עיגול פינות, משום שלא נמצא לה המקור שממנו מגיע הקו.');
+        }
+      }
+      col += cell.width;
+    }
+  }
+
   // --- בניית קוד הוויקי ---
   const lines = [];
   if (opts.wrap) lines.push('{{תרשים}}');
+  const lead = (before || '').trim();
+  const tail = (after || '').trim();
+  if (opts.keepSurrounding && lead) lines.push(lead);
   lines.push('{| class="DiagramTable"');
   for (const row of grid) {
     lines.push('|-');
@@ -487,6 +560,12 @@ export function convert(input, userOpts = {}) {
   }
   lines.push('|}');
   if (opts.wrap) lines.push('<noinclude>{{נוצר באמצעות תרשים}}</noinclude>');
+  if (opts.keepSurrounding && tail) lines.push(tail);
+  if (opts.keepSurrounding && (lead || tail)) {
+    warn('טקסט שנמצא מחוץ לעץ — מקרא, קטגוריות וכיוצא בהם — הועתק לפלט כמות שהוא.');
+  } else if (!opts.keepSurrounding && (lead || tail)) {
+    warn('טקסט שנמצא מחוץ לעץ הושמט מהפלט (האפשרות "שמירת טקסט שמחוץ לעץ" כבויה).');
+  }
 
   return {
     wiki: lines.join('\n'),
