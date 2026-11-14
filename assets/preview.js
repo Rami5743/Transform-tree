@@ -27,7 +27,8 @@ function segStyle(seg, dir) {
   const color = toCss(seg.col, 'var(--line)');
   const style = seg.s === 'solid' ? 'solid' : seg.s;
   const side = dir === 'u' || dir === 'd' ? 'left' : 'top';
-  const len = seg.stub ? '28%' : '50%';
+  // חפיפה של חצי עובי הקו אל מעבר למרכז, כדי שהצמתים ייראו רציפים
+  const len = seg.stub ? '28%' : 'calc(50% + 1px)';
   const size = dir === 'u' || dir === 'd' ? `height:${len}` : `width:${len}`;
   return `${size};border-${side}:2px ${style} ${color}`;
 }

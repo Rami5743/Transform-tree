@@ -121,10 +121,11 @@ button.ghost:hover, button.primary:hover { filter: brightness(1.08); }
 .pv-table td { padding: 0; vertical-align: middle; }
 .pv-tilecell { position: relative; width: 2.2em; min-width: 2.2em; height: 2.2em; }
 .pv-seg { position: absolute; display: block; }
-.pv-u { left: 50%; top: 0; margin-inline-start: -1px; }
-.pv-d { left: 50%; bottom: 0; margin-inline-start: -1px; }
-.pv-l { top: 50%; inset-inline-start: 0; margin-top: -1px; }
-.pv-r { top: 50%; inset-inline-end: 0; margin-top: -1px; }
+/* תכונות פיזיות בלבד: הטבלה היא מימין לשמאל, ותכונות לוגיות היו מתהפכות בה */
+.pv-u { left: 50%; top: 0; margin-left: -1px; }
+.pv-d { left: 50%; bottom: 0; margin-left: -1px; }
+.pv-l { top: 50%; left: 0; margin-top: -1px; }
+.pv-r { top: 50%; right: 0; margin-top: -1px; }
 .pv-boxcell { padding: 2px; }
 .pv-box {
   border: 2px solid var(--line);
