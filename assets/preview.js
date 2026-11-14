@@ -87,19 +87,33 @@ function parseTable(wiki) {
  *  מקריאת תבנית לרכיבי ציור
  * ------------------------------------------------------------------ */
 
-const SEG_DIRS = { '2': ['d'], '4': ['l'], '6': ['r'], '8': ['u'], '28': ['u', 'd'], '46': ['l', 'r'] };
+const SEG_CODES = ['2', '4', '6', '8', '28', '46'];
 const CORNER_OF = { dl: '1', dr: '3', ul: '7', ur: '9' };
 
-const line = (dir, a, fallbackStyle) => ({
-  kind: 'seg', dir,
+const line = (code, a, fallbackStyle) => ({
+  kind: 'seg', code,
   s: style(a.סגנון, fallbackStyle || 'solid'),
   w: len(a.עובי, '2px'),
-  c: toCss(a.צבע, 'black')
+  c: toCss(a.צבע, 'black'),
+  gap: a.רווח ? len(a.רווח, '0px') : ''
 });
 
 /** רכיבי הציור של מרצפת בעלת שם מתבנית {{מרצפת}}. */
 function namedTile(name, a) {
   if (!name || name === 'ריקה') return [];
+
+  // מרצפות עם גדם קצר, שאינן מצויות ברשימת המרצפות בעלות השם
+  if (name === '+מעל' || name === '+מתחת') {
+    const base = { s: style(a.סגנון, 'solid'), w: len(a.עובי, '2px'), c: toCss(a.צבע, 'black') };
+    const g = len(a.רווח, '2px');
+    return name === '+מעל'
+      ? [{ kind: 'seg', code: '46', gap: '', ...base },
+         { kind: 'seg', code: '8', gap: g, ...base },
+         { kind: 'seg', code: '2', gap: g, ...base }]
+      : [{ kind: 'seg', code: '4', gap: g, ...base },
+         { kind: 'seg', code: '6', gap: g, ...base },
+         { kind: 'seg', code: '28', gap: '', ...base }];
+  }
 
   if (name === 'אוניברסלית' || name === 'אוניברסליתע') {
     const keys = name.endsWith('ע') ? ['1', '3', '7', '9'] : ['8', '2', '4', '6'];
@@ -109,7 +123,7 @@ function namedTile(name, a) {
       if (!w || parseFloat(w) === 0) continue;
       const common = { s: style(a['סגנון' + k], 'solid'), w: len(w, '2px'), c: toCss(a['צבע' + k], 'black') };
       if (name.endsWith('ע')) out.push({ kind: 'corner', n: k, r: len(a['עיגול' + k], '10px'), ...common });
-      else out.push({ kind: 'seg', dir: SEG_DIRS[k][0], ...common });
+      else out.push({ kind: 'seg', code: k, gap: a['רווח' + k] ? len(a['רווח' + k], '0px') : '', ...common });
     }
     return out;
   }
@@ -123,18 +137,32 @@ function namedTile(name, a) {
   const present = ['u', 'd', 'l', 'r'].filter((d) => def.segs[d]);
   const w = len(a.עובי, '2px');
 
+  const V = present.filter((d) => d === 'u' || d === 'd');
+  const H = present.filter((d) => d === 'l' || d === 'r');
+
   if (!rounded) {
-    return present.map((d) => ({
-      kind: 'seg', dir: d, w,
-      s: style(a.סגנון, def.segs[d].s),
-      c: colorOf(def.segs[d].slot)
-    }));
+    // המרצפות שבתבנית בנויות מקטע מלא כשהזוג זהה, ומחצאים אחרת; פינה
+    // ברדיוס אפס משמשת כשיש בדיוק קטע אנכי אחד וקטע מאוזן אחד.
+    const same = (x, y) => style(a.סגנון, def.segs[x].s) === style(a.סגנון, def.segs[y].s) &&
+      colorOf(def.segs[x].slot) === colorOf(def.segs[y].slot);
+    if (V.length === 1 && H.length === 1 && same(V[0], H[0])) {
+      return [{ kind: 'corner', n: CORNER_OF[V[0] + H[0]], r: len(a.עיגול, '0px'), w,
+        s: style(a.סגנון, def.segs[V[0]].s), c: colorOf(def.segs[V[0]].slot) }];
+    }
+    const out = [];
+    const emit = (code, d) => out.push({ kind: 'seg', code, w, gap: '',
+      s: style(a.סגנון, def.segs[d].s), c: colorOf(def.segs[d].slot) });
+    if (H.length === 2 && same('l', 'r')) emit('46', 'l');
+    else H.forEach((d) => emit(d === 'l' ? '4' : '6', d));
+    if (V.length === 2 && same('u', 'd')) emit('28', 'u');
+    else V.forEach((d) => emit(d === 'u' ? '8' : '2', d));
+    return out;
   }
   // מרצפת מעוגלת בנויה מפינה לכל צמד של קטע אנכי וקטע מאוזן
   const out = [];
   const r = len(a.עיגול, '10px');
-  for (const v of present.filter((d) => d === 'u' || d === 'd')) {
-    for (const h of present.filter((d) => d === 'l' || d === 'r')) {
+  for (const v of V) {
+    for (const h of H) {
       out.push({
         kind: 'corner', n: CORNER_OF[v + h], r, w,
         s: style(a.סגנון, def.segs[v].s),
@@ -150,7 +178,7 @@ function cellPrims(text) {
   const out = [];
   for (const t of templates(text)) {
     if (t.name === 'מרצפת') out.push(...namedTile(t.pos[0] || '', t.args));
-    else if (t.name === 'קטע') for (const d of SEG_DIRS[t.pos[0] || '6'] || []) out.push(line(d, t.args));
+    else if (t.name === 'קטע' && SEG_CODES.includes(t.pos[0] || '6')) out.push(line(t.pos[0] || '6', t.args));
     else if (t.name === 'פינה') {
       out.push({ kind: 'corner', n: t.pos[0] || '9', r: len(t.args.עיגול, '10px'),
         s: style(t.args.סגנון, 'solid'), w: len(t.args.עובי, '2px'), c: toCss(t.args.צבע, 'black') });
@@ -180,39 +208,54 @@ function wikiText(text) {
     .split('\u0001BR\u0001').join('<br>');
 }
 
-/** הקו מצויר כך שמרכזו על קו האמצע של התא, ולכן הצמתים רציפים. */
+/*
+ * הגאומטריה מועתקת כלשונה מתבנית:קטע, מתבנית:פינה ומגיליון הסגנונות של
+ * תבנית תרשים. בפרט: הקו אינו ממורכז על קו האמצע של התא אלא צמוד לו מצדו
+ * האחד, וזה מה שמביא קטעים ופינות שכנים לחפוף בדיוק.
+ */
 function segStyle(p) {
-  const half = `calc(${p.w} / 2)`;
-  const long = `calc(50% + ${half})`;
-  const border = `${p.w} ${p.s} ${p.c}`;
-  if (p.dir === 'u') return `top:0;left:calc(50% - ${half});width:0;height:${long};border-left:${border}`;
-  if (p.dir === 'd') return `bottom:0;left:calc(50% - ${half});width:0;height:${long};border-left:${border}`;
-  if (p.dir === 'l') return `left:0;top:calc(50% - ${half});height:0;width:${long};border-top:${border}`;
-  return `right:0;top:calc(50% - ${half});height:0;width:${long};border-top:${border}`;
-}
-
-function cornerStyle(p) {
-  const half = `calc(${p.w} / 2)`;
-  const mid = `calc(50% - ${half})`;
   const b = `${p.w} ${p.s} ${p.c}`;
-  switch (String(p.n)) {
-    case '1': return `left:0;right:${mid};top:${mid};bottom:0;border-right:${b};border-top:${b};border-radius:0 ${p.r} 0 0`;
-    case '3': return `right:0;left:${mid};top:${mid};bottom:0;border-left:${b};border-top:${b};border-radius:${p.r} 0 0 0`;
-    case '7': return `left:0;right:${mid};top:0;bottom:${mid};border-right:${b};border-bottom:${b};border-radius:0 0 ${p.r} 0`;
-    default: return `right:0;left:${mid};top:0;bottom:${mid};border-left:${b};border-bottom:${b};border-radius:0 0 0 ${p.r}`;
+  const g = p.gap;
+  switch (p.code) {
+    case '46': return `bottom:0;left:0;right:0;height:50%;border-top:${b}`;
+    case '28': return `bottom:0;right:0;width:50%;height:100%;border-left:${b}`;
+    case '8': return `top:0;right:0;width:50%;height:${g ? `calc(50% - ${g} + ${p.w})` : '50%'};border-left:${b}`;
+    case '2': return `bottom:0;right:0;width:50%;height:${g ? `calc(50% + ${p.w} - ${g})` : `calc(50% + ${p.w} / 2)`};border-left:${b}`;
+    case '4': return `bottom:0;left:0;right:${g ? `calc(50% + ${g} + ${p.w})` : '50%'};height:50%;border-top:${b}`;
+    default: return `bottom:0;right:0;width:${g ? `calc(50% - ${g})` : '50%'};height:50%;border-top:${b}`;
   }
 }
 
-/** תיבת טקסט: {{תרשים/תיבה}} על פרמטריה. */
+function cornerStyle(p) {
+  const b = `${p.w} ${p.s} ${p.c}`;
+  switch (String(p.n)) {
+    case '1': return `bottom:0;left:0;right:50%;height:50%;border-right:${b};border-top:${b};border-radius:0 ${p.r} 0 0`;
+    case '3': return `bottom:0;right:0;width:50%;height:50%;border-left:${b};border-top:${b};border-radius:${p.r} 0 0 0`;
+    case '7': return `top:0;left:0;right:50%;bottom:50%;border-right:${b};border-bottom:${b};border-radius:0 0 ${p.r} 0`;
+    default: return `top:0;right:0;width:50%;bottom:50%;border-left:${b};border-bottom:${b};border-radius:0 0 0 ${p.r}`;
+  }
+}
+
+/**
+ * תיבת טקסט: {{תרשים/תיבה}} על פרמטריה.
+ *
+ * המבנה מועתק מן התבנית עצמה: שכבת מסגרת הממוקמת מיקום מוחלט ונפרשת על כל
+ * התא, ומעליה שכבת התוכן בזרימה. זה מה שמביא את הקווים שבתאים הסמוכים לגעת
+ * בדיוק בגבול התיבה; תיבה שהיא div בזרימה משאירה רווח.
+ */
 function boxCell(text, span) {
   const t = templates(text).find((x) => /^תרשים\/תיבה/.test(x.name));
   const a = t ? t.args : {};
-  const css = [
-    'background:' + toCss(a['צבע רקע'], PRESETS['רקע']),
-    'border:' + len(a['עובי מסגרת'], '2px') + ' ' + style(a['סגנון מסגרת'], 'solid') + ' ' + toCss(a['צבע מסגרת'], 'black'),
+  const border = len(a['עובי מסגרת'], '2px');
+  const frame = [
+    'background-color:' + toCss(a['צבע רקע'], PRESETS['רקע']),
+    'border:' + border + ' ' + style(a['סגנון מסגרת'], 'solid') + ' ' + toCss(a['צבע מסגרת'], 'black'),
     'border-radius:' + len(a['עיגול פינות'], '5px')
   ].join(';') + ';' + (a['עיצוב'] || '');
-  return `<td colspan="${span}" class="pv-boxcell"><div class="pv-box" style="${esc(css)}">${wikiText(a['טקסט'] || '')}</div></td>`;
+  const pad = `padding:calc(${border} + 2px)`;
+  return `<td colspan="${span}" class="pv-boxcell">` +
+    `<div class="pv-frame" style="${esc(frame)}"></div>` +
+    `<div class="pv-content" style="${pad}">${wikiText(a['טקסט'] || '')}</div></td>`;
 }
 
 /**
@@ -228,7 +271,8 @@ export function renderPreview(wiki) {
       const prims = cellPrims(cell)
         .map((p) => `<i class="pv-p" style="${p.kind === 'seg' ? segStyle(p) : cornerStyle(p)}"></i>`)
         .join('');
-      return `<td class="pv-tilecell">${prims}</td>`;
+      // {{ממלא מקום}} — div בזרימה שקובע את הגודל המזערי של התא
+      return `<td class="pv-tilecell"><i class="pv-spacer"></i>${prims}</td>`;
     });
     return '<tr>' + cells.join('') + '</tr>';
   });
