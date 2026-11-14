@@ -209,6 +209,69 @@ function matchNamed(target, cand, opts) {
   return { name, params };
 }
 
+/**
+ * מרצפת T של קו אחים: קו מאוזן ישר שעובר דרך המרצפת, ועליו פינה מעוגלת
+ * אחת היורדת ממנו למטה.
+ *
+ * המרצפת "זע" אינה מתאימה כאן: היא מורכבת משתי פינות שמתמזגות כלפי מטה,
+ * ולכן הקו המאוזן נשבר במרכז והאחים משני צדיו נראים מופרדים. הצורה
+ * הנכונה בנויה מ{{קטע}} ומ{{פינה}} ישירות, כמתואר בתיעוד {{מרצפת}}.
+ *
+ * הפינה פונה אל עבר הפיצול שממנו מגיע הקו: פינה 1 כשהפיצול משמאל,
+ * פינה 3 כשהוא מימין.
+ */
+function composedTee(target, side, opts) {
+  const h = target.l || target.r;
+  const v = target.d;
+  const width = opts.lineWidth || '2פק';
+
+  const seg = ['קטע', '46'];
+  if (h.s !== 'solid') seg.push('סגנון=' + styleName(h.s));
+  if (opts.lineWidth) seg.push('עובי=' + opts.lineWidth);
+  if (h.col != null) seg.push('צבע=' + h.col);
+
+  const corner = ['פינה', side === 'l' ? '1' : '3'];
+  if (v.s !== 'solid') corner.push('סגנון=' + styleName(v.s));
+  corner.push('עובי=' + width);
+  if (v.col != null) corner.push('צבע=' + v.col);
+  if (opts.cornerRadius) corner.push('עיגול=' + opts.cornerRadius);
+
+  return '{{' + seg.join('|') + '}}{{ממלא מקום|גובה=2את|רוחב=2את}}{{' + corner.join('|') + '}}';
+}
+
+/** האם צורת הקטעים היא T של קו אחים: מאוזן מלא ועוד קו יורד. */
+function isTee(t) {
+  if (!t.l || !t.r || !t.d || t.u) return false;
+  return t.l.s === t.r.s && t.l.s === t.d.s && t.l.col === t.r.col && t.l.col === t.d.col;
+}
+
+/**
+ * מאתר את הפיצול שממנו מגיע הקו אל מרצפת ה-T שבמקום i, ומחזיר 'l' אם הוא
+ * משמאל, 'r' אם הוא מימין, או null אם לא נמצא. הסריקה עוברת לאורך הקו
+ * המאוזן בלבד ונעצרת בכל נתק; תיבה או מרצפת ריקה חוסמות אותה.
+ *
+ * שימו לב: במערך התאים האינדקס גדל שמאלה, משום שהטבלה היא מימין לשמאל.
+ */
+function teeSide(cells, i) {
+  const segsOf = (c) => (c && c.segs ? c.segs : null);
+  const walk = (step, from, to) => {
+    let j = i, dist = 0;
+    for (;;) {
+      const here = segsOf(cells[j]), next = segsOf(cells[j + step]);
+      if (!here || !next || !here[from] || !next[to]) return null;
+      j += step; dist++;
+      if (next.u && (next.l || next.r)) return dist;
+      if (!next[from]) return null;
+    }
+  };
+  const left = walk(1, 'l', 'r');
+  const right = walk(-1, 'r', 'l');
+  if (left === null && right === null) return null;
+  if (left === null) return 'r';
+  if (right === null) return 'l';
+  return left <= right ? 'l' : 'r';
+}
+
 /** מרצפת אוניברסלית — פתרון כללי לכל צירוף קטעים. */
 function universal(target, opts) {
   const params = [];
@@ -362,7 +425,12 @@ export function convert(input, userOpts = {}) {
         if (hadDash && dashStyle && opts.replaceDashes) {
           warn('הפרמטר "סגנון_מקווקו" נזנח משום שהקווים המקווקווים הוחלפו בקווים צבועים.');
         }
-        cells.push({ type: 'tile', width: 1, wiki: tileWiki(target, tileOpts), segs: target });
+        const tee = opts.round && isTee(target);
+        cells.push({
+          type: 'tile', width: 1, segs: target, tee,
+          // מרצפת T מקבלת כאן צורה לא מעוגלת; היא מוכרעת שוב בסוף השורה
+          wiki: tileWiki(target, tee ? { ...tileOpts, round: false } : tileOpts)
+        });
         nTiles++;
       } else {
         // ----- תיבה -----
@@ -385,6 +453,18 @@ export function convert(input, userOpts = {}) {
         nBoxes++;
       }
     }
+    // כעת, משידועה כל השורה, אפשר לקבוע לאיזה צד פונה הפינה של כל מרצפת T
+    for (let i = 0; i < cells.length; i++) {
+      if (!cells[i].tee) continue;
+      const side = teeSide(cells, i);
+      if (side) {
+        cells[i].wiki = composedTee(cells[i].segs, side, tileOpts);
+        cells[i].corner = side;
+      } else {
+        warn('מרצפת "ז" שלא נמצא לה הפיצול שממנו יוצא הקו נותרה ללא עיגול פינות, כדי שהקו המאוזן לא יישבר.');
+      }
+    }
+
     grid.push(cells);
   }
 
