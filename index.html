@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>המרת עץ משפחה לתרשים</title>
+<meta name="description" content="כלי להמרת קוד {{עץ משפחה}} לקוד {{תרשים}} בוויקיפדיה העברית.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🌳</text></svg>">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="top">
+  <h1>המרת עץ משפחה לתרשים</h1>
+  <p class="sub">
+    הדביקו קוד של <a href="https://he.wikipedia.org/wiki/%D7%AA%D7%91%D7%A0%D7%99%D7%AA:%D7%A2%D7%A5_%D7%9E%D7%A9%D7%A4%D7%97%D7%94" target="_blank" rel="noopener">תבנית עץ משפחה</a>
+    וקבלו תרשים הניתן לעריכה חזותית בעזרת <a href="https://he.wikipedia.org/wiki/%D7%AA%D7%91%D7%A0%D7%99%D7%AA:%D7%AA%D7%A8%D7%A9%D7%99%D7%9D" target="_blank" rel="noopener">תבנית תרשים</a>.
+    ההמרה מתבצעת בדפדפן בלבד — שום דבר אינו נשלח לשרת.
+  </p>
+</header>
+
+<main>
+
+<section class="panel" id="settings-panel">
+  <h2>הגדרות</h2>
+  <div class="grid" id="settings"></div>
+  <p class="actions">
+    <button type="button" id="reset" class="ghost">איפוס ההגדרות</button>
+  </p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2><label for="input">קלט — קוד עץ משפחה</label></h2>
+    <span class="tools">
+      <button type="button" id="sample" class="ghost">טעינת דוגמה</button>
+      <button type="button" id="clear" class="ghost">ניקוי</button>
+    </span>
+  </div>
+  <textarea id="input" spellcheck="false" dir="rtl" rows="14"
+    placeholder="כתבו או הדביקו כאן את הקוד להמרה. לדוגמה: {{עץ משפחה|!}} {{עץ משפחה|-}}"></textarea>
+  <p class="status" id="in-status"></p>
+</section>
+
+<section class="panel" id="warn-panel" hidden>
+  <h2>הערות על ההמרה</h2>
+  <ul id="warnings"></ul>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2><label for="output">פלט — קוד תרשים</label></h2>
+    <span class="tools">
+      <label class="dirpick">כיוון התצוגה:
+        <select id="outdir">
+          <option value="rtl">מימין לשמאל</option>
+          <option value="ltr">משמאל לימין</option>
+        </select>
+      </label>
+      <button type="button" id="copy" class="primary">העתקה</button>
+      <button type="button" id="download" class="ghost">הורדה</button>
+    </span>
+  </div>
+  <textarea id="output" spellcheck="false" dir="rtl" rows="16" readonly
+    placeholder="כאן יופיע הקוד המומר."></textarea>
+  <p class="status" id="out-status"></p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>תצוגה מקדימה</h2>
+    <span class="tools">
+      <button type="button" id="toggle-preview" class="ghost" aria-expanded="true">הסתרה</button>
+    </span>
+  </div>
+  <p class="note">
+    התצוגה נבנית מתוך מה שהכלי הבין מהקלט, והיא קירוב בלבד: היא אינה מריצה תבניות ויקי,
+    ולכן תבניות בתוך תיבות הטקסט מוצגות באופן חלקי.
+  </p>
+  <div class="preview-wrap" id="preview"></div>
+</section>
+
+<section class="panel">
+  <h2>מה הכלי עושה</h2>
+  <div class="cols">
+    <div>
+      <h3>תיקוני באגים לעומת הסקריפט המקורי</h3>
+      <ul>
+        <li>יישור עמודות: תיבת טקסט רחבה כשלוש מרצפות, ולכן שורות באורכים שונים יושרו זו לזו.</li>
+        <li>תאים ריקים מולאו במרצפת ריקה במקום להישאר ריקים (תא בלי מרצפת שובר את פריסת התרשים).</li>
+        <li>המרצפות <code>}</code>, <code>{</code>, <code>]</code>, <code>[</code> יצרו קוד ויקי שבור; כעת הן מתורגמות נכון.</li>
+        <li>אסימון שאינו מרצפת מוכרת מתורגם לתיבה — גם אם לא הוגדר לו טקסט — במקום למרצפת מומצאת.</li>
+        <li>ערך של פרמטר שמי שמכיל סימן שווה נוסף אינו נחשב עוד למרצפת.</li>
+        <li>שם תיבה העטוף ברווחים מזוהה, ולא נופל בין הכיסאות.</li>
+        <li>פיצול הקלט מכבד קישורים, תבניות מקוננות, תגיות HTML, <span dir="ltr">&lt;nowiki&gt;</span> והערות.</li>
+        <li>קלט ריק או חסר אינו גורם לשגיאה.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>מה נוסף</h3>
+      <ul>
+        <li>כל 46 המרצפות של תבנית עץ משפחה מתורגמות, ובהן גם אלה שאין להן שם מקביל: <code>ו</code>, <code>K</code>, <code>G</code>, <code>}</code>, <code>{</code>, <code>]</code>, <code>[</code>, <code>&amp;</code>, <code>0</code>, <code>-2</code>, <code>!2</code>, <code>+ש2</code>, <code>+2ש</code>, <code>+מעל</code>, <code>+מתחת</code>.</li>
+        <li>מרצפת שאין לה מקבילה בעלת שם מתורגמת למרצפת האוניברסלית.</li>
+        <li>הפרמטרים <code>עיצוב</code>, <code>גבול</code>, <code>צבע2</code>, <code>עובי_קו</code> ו־<code>סגנון_מקווקו</code> של השורה מתורגמים.</li>
+        <li>עיגול פינות חל גם על <code>^</code>, <code>(</code>, <code>)</code> ו־<code>ז</code>, ולא רק על ארבע הפינות הפשוטות.</li>
+        <li>דיווח על כל מקום שבו ההמרה היא קירוב או שבו הקלט חסר.</li>
+        <li>תצוגה מקדימה, העתקה בלחיצה, שמירת ההגדרות בדפדפן.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <p>
+    הקוד מבוסס על <a href="https://colab.research.google.com/drive/1Si2KnlmZMaqL4saqxhQMlJrniOaA7t01" target="_blank" rel="noopener">סקריפט הייבוא</a>
+    המתואר בדף התיעוד של תבנית תרשים.
+    <a href="https://github.com/Rami5743/Transform-tree" target="_blank" rel="noopener">קוד המקור</a>
+  </p>
+</footer>
+
+<script type="module" src="assets/app.js"></script>
+</body>
+</html>
