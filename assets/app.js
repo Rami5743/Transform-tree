@@ -184,7 +184,31 @@ function run() {
   }
   $('warn-panel').hidden = result.warnings.length === 0;
 
-  $('preview').innerHTML = renderPreview(result.grid, options);
+  $('preview').innerHTML = renderPreview(result.wiki);
+  fitPreview();
+}
+
+/**
+ * מכווץ את התצוגה כדי שתרשים רחב ייכנס לרוחב הפאנל. בלי זה הטבלה גולשת
+ * שמאלה ורק חלקה נראה.
+ */
+let fitMode = true;
+function fitPreview() {
+  const wrap = $('preview');
+  const table = wrap.querySelector('.pv-table');
+  if (!table) return;
+  table.style.transform = '';
+  table.classList.remove('fit');
+  wrap.style.height = '';
+  if (!fitMode) return;
+  const avail = wrap.clientWidth;
+  const full = table.scrollWidth;
+  if (avail > 0 && full > avail) {
+    const k = avail / full;
+    table.classList.add('fit');
+    table.style.transform = `scale(${k})`;
+    wrap.style.height = Math.ceil(table.offsetHeight * k) + 'px';
+  }
 }
 
 /* ---------- שמירה מקומית ---------- */
@@ -265,6 +289,14 @@ function init() {
   });
 
   $('outdir').addEventListener('change', (e) => { $('output').dir = e.target.value; });
+
+  $('fit').addEventListener('click', (e) => {
+    fitMode = !fitMode;
+    e.target.textContent = fitMode ? 'גודל מלא' : 'התאמה לרוחב';
+    fitPreview();
+  });
+
+  window.addEventListener('resize', fitPreview);
 
   $('toggle-preview').addEventListener('click', (e) => {
     const box = $('preview');
