@@ -226,11 +226,15 @@ function expandTemplates(t) {
 function wikiText(text) {
   let t = expandTemplates(String(text || ''));
   t = t.replace(/<br\s*\/?>/gi, '\u0001BR\u0001');
+  // תגיות עיצוב פנימיות נשמרות; כל השאר מוברח כטקסט
+  t = t.replace(/<(\/?)(small|big|b|i|u|s|strong|em|sub|sup)\s*>/gi,
+    (m, slash, tag) => `\u0001T${slash ? '/' : ''}${tag.toLowerCase()}\u0001`);
   t = t.replace(/\[\[\s*(?:תמונה|קובץ|File|Image)\s*:[^\]]*\]\]/gi, '\u0001IMG\u0001');
   t = t.replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2');
   t = t.replace(/\[\[([^\]]*)\]\]/g, '$1');
   t = esc(t);
   t = t.replace(/'''(.*?)'''/g, '<b>$1</b>').replace(/''(.*?)''/g, '<i>$1</i>');
+  t = t.replace(/\u0001T(\/?)([a-z]+)\u0001/g, '<$1$2>');
   return t.split('\u0001IMG\u0001').join('<span class="pv-img" title="קובץ"></span>')
     .split('\u0001LANG\u0001').join('<span class="pv-lang">(אנ)</span>')
     .split('\u0001BR\u0001').join('<br>');

@@ -301,71 +301,81 @@ function uniform(t) {
 }
 
 /**
- * מרצפת T של קו אחים: קו מאוזן ישר שעובר דרך המרצפת, ועליו פינה מעוגלת
- * אחת היורדת ממנו למטה.
+ * מרצפת מתפצלת: הקו העובר נשאר ישר, וכל ענף מתעגל אל עבר הקטע היחיד
+ * שבצדו השני של הפיצול.
  *
- * המרצפת "זע" אינה מתאימה כאן: היא מורכבת משתי פינות שמתמזגות כלפי מטה,
- * ולכן הקו המאוזן נשבר במרכז והאחים משני צדיו נראים מופרדים. הצורה
- * הנכונה בנויה מ{{קטע}} ומ{{פינה}} ישירות, כמתואר בתיעוד {{מרצפת}}.
- *
- * הפינה פונה אל עבר הפיצול שממנו מגיע הקו: פינה 1 כשהפיצול משמאל,
- * פינה 3 כשהוא מימין.
+ * המרצפות המעוגלות המוכנות אינן מתאימות לכל מקרה, משום שהן תמיד ממזגות
+ * את כל הקטעים מצד אחד אל כל הקטעים מהצד האחר. כשיש יותר מקטע אחד בכל
+ * אחד משני הצדדים, המיזוג שובר את הקו העובר.
  */
-function composedTee(target, side, opts) {
-  return segCall('46', target.l || target.r, opts) + SPACER +
-    cornerCall(side === 'l' ? '1' : '3', target.d, opts);
-}
-
-/**
- * מרצפת שקו אנכי עובר דרכה ויוצא ממנה ענף מאוזן אחד או שניים: ")", "(" ו-"+".
- *
- * גם כאן המרצפות המעוגלות הקיימות אינן מתאימות: ")ע" בנויה משתי פינות
- * המתמזגות אל הענף השמאלי, ולכן הקו האנכי נשבר; ול-"+" אין כלל גרסה מעוגלת.
- * במקומן נבנית המרצפת מ{{קטע|28}} — קו אנכי ישר — ומפינה לכל ענף מאוזן,
- * המעוגלת אל עבר המקור שממנו מגיע הקו האנכי.
- */
-function composedCross(target, from, opts) {
-  const out = [segCall('28', target.u || target.d, opts), SPACER];
-  if (target.l) out.push(cornerCall(from === 'u' ? '7' : '1', target.l, opts));
-  if (target.r) out.push(cornerCall(from === 'u' ? '9' : '3', target.r, opts));
+function composedJunction(target, one, opts) {
+  const V = ['u', 'd'].filter((d) => target[d]);
+  const H = ['l', 'r'].filter((d) => target[d]);
+  const vertical = one === 'u' || one === 'd';
+  const out = [];
+  if (vertical && V.length === 2) out.push(segCall('28', target.u, opts));
+  if (!vertical && H.length === 2) out.push(segCall('46', target.l, opts));
+  out.push(SPACER);
+  for (const d of vertical ? H : V) {
+    out.push(cornerCall(CORNER_OF[vertical ? one + d : d + one], target[d], opts));
+  }
   return out.join('');
 }
 
-/** צורת מרצפת שקו אנכי עובר דרכה ויוצא ממנה ענף מאוזן. */
-function isCross(t) {
-  return Boolean(t.u && t.d && (t.l || t.r) && uniform(t));
-}
+const CORNER_OF = { dl: '1', dr: '3', ul: '7', ur: '9' };
 
-/** האם צורת הקטעים היא T של קו אחים: מאוזן מלא ועוד קו יורד. */
-function isTee(t) {
-  return Boolean(t.l && t.r && t.d && !t.u && uniform(t));
+/** מספר הקטעים היוצאים מן המרצפת. */
+const armCount = (t) => DIRS.filter((d) => t[d]).length;
+
+/** מרצפת שיוצאים ממנה שלושה קטעים או יותר, כולם באותו סגנון ובאותו צבע. */
+function isJunction(t) {
+  return armCount(t) >= 3 && uniform(t);
 }
 
 /**
- * מאתר את הפיצול שממנו מגיע הקו אל מרצפת ה-T שבמקום i, ומחזיר 'l' אם הוא
- * משמאל, 'r' אם הוא מימין, או null אם לא נמצא. הסריקה עוברת לאורך הקו
- * המאוזן בלבד ונעצרת בכל נתק; תיבה או מרצפת ריקה חוסמות אותה.
+ * האם הקו המאוזן היוצא מן המרצפת בכיוון הנתון מגיע אל מרצפת שיוצא ממנה
+ * קטע כלפי מעלה — כלומר אל מקור של הקו.
  *
- * שימו לב: במערך התאים האינדקס גדל שמאלה, משום שהטבלה היא מימין לשמאל.
+ * הסריקה עוברת לאורך הקו בלבד ונעצרת בכל נתק ובכל תיבה. שימו לב:
+ * במערך התאים האינדקס גדל שמאלה, משום שהטבלה היא מימין לשמאל.
  */
-function teeSide(cells, i) {
+function horizontalLeadsUp(cells, i, dir) {
+  const step = dir === 'l' ? 1 : -1;
+  const back = dir === 'l' ? 'r' : 'l';
   const segsOf = (c) => (c && c.segs ? c.segs : null);
-  const walk = (step, from, to) => {
-    let j = i, dist = 0;
-    for (;;) {
-      const here = segsOf(cells[j]), next = segsOf(cells[j + step]);
-      if (!here || !next || !here[from] || !next[to]) return null;
-      j += step; dist++;
-      if (next.u && (next.l || next.r)) return dist;
-      if (!next[from]) return null;
-    }
-  };
-  const left = walk(1, 'l', 'r');
-  const right = walk(-1, 'r', 'l');
-  if (left === null && right === null) return null;
-  if (left === null) return 'r';
-  if (right === null) return 'l';
-  return left <= right ? 'l' : 'r';
+  let j = i;
+  for (;;) {
+    const here = segsOf(cells[j]), next = segsOf(cells[j + step]);
+    if (!here || !next || !here[dir] || !next[back]) return false;
+    j += step;
+    if (next.u) return true;
+    if (!next[dir]) return false;
+  }
+}
+
+/**
+ * הקטע היחיד שבצדו האחד של הפיצול, שאליו מתעגלים כל האחרים — או null
+ * כשאין צד כזה.
+ *
+ * בעץ משפחה הקו האנכי זורם מלמעלה למטה, ולכן קטע כלפי מעלה הוא כניסה
+ * וקטע כלפי מטה הוא יציאה. יוצא מן הכלל: אם אין כלום מעל המרצפת ויש
+ * חיבור מתחתיה, הכיוון מתהפך. קטע מאוזן נבדק בסריקה לאורכו.
+ */
+function junctionPivot(cells, i, above, below) {
+  const t = cells[i].segs;
+  const ins = [], outs = [];
+  if (t.u && t.d) {
+    const flipped = !above && below;
+    ins.push(flipped ? 'd' : 'u');
+    outs.push(flipped ? 'u' : 'd');
+  } else if (t.u) ins.push('u');
+  else if (t.d) outs.push('d');
+  for (const h of ['l', 'r']) {
+    if (t[h]) (horizontalLeadsUp(cells, i, h) ? ins : outs).push(h);
+  }
+  if (ins.length === 1) return ins[0];
+  if (outs.length === 1) return outs[0];
+  return null;
 }
 
 /** מרצפת אוניברסלית — פתרון כללי לכל צירוף קטעים. */
@@ -525,12 +535,11 @@ export function convert(input, userOpts = {}) {
         }
         // מרצפות שצורתן המעוגלת תלויה בהקשר מקבלות כאן צורה לא מעוגלת,
         // והן מוכרעות שוב לאחר שכל הטבלה נבנתה
-        const tee = opts.round && isTee(target);
-        const cross = opts.round && !tee && isCross(target);
+        const junction = opts.round && isJunction(target);
         cells.push({
-          type: 'tile', width: 1, segs: target, tee, cross,
-          tileOpts: tee || cross ? tileOpts : undefined,
-          wiki: tileWiki(target, tee || cross ? { ...tileOpts, round: false } : tileOpts)
+          type: 'tile', width: 1, segs: target, junction,
+          tileOpts: junction ? tileOpts : undefined,
+          wiki: tileWiki(target, junction ? { ...tileOpts, round: false } : tileOpts)
         });
         nTiles++;
       } else {
@@ -583,25 +592,23 @@ export function convert(input, userOpts = {}) {
     let col = 0;
     for (let i = 0; i < grid[r].length; i++) {
       const cell = grid[r][i];
-      if (cell.tee) {
-        const side = teeSide(grid[r], i);
-        if (side) {
-          cell.wiki = composedTee(cell.segs, side, cell.tileOpts);
-          cell.corner = side;
-        } else {
-          warn('מרצפת "ז" שלא נמצא לה הפיצול שממנו יוצא הקו נותרה ללא עיגול פינות, כדי שהקו המאוזן לא יישבר.');
-        }
-      } else if (cell.cross) {
-        const up = feeds(r > 0 ? byColumn[r - 1][col] : null, 'd');
-        const down = feeds(r < grid.length - 1 ? byColumn[r + 1][col] : null, 'u');
-        // בעץ משפחה הקו זורם כלפי מטה, ולכן כששני הצדדים מחוברים המקור הוא מלמעלה
-        const from = up ? 'u' : down ? 'd' : null;
-        if (from) {
-          cell.wiki = composedCross(cell.segs, from, cell.tileOpts);
-          cell.corner = from;
-        } else {
-          warn('מרצפת שקו אנכי עובר דרכה נותרה ללא עיגול פינות, משום שלא נמצא לה המקור שממנו מגיע הקו.');
-        }
+      if (!cell.junction) { col += cell.width; continue; }
+      const one = junctionPivot(
+        grid[r], i,
+        feeds(r > 0 ? byColumn[r - 1][col] : null, 'd'),
+        feeds(r < grid.length - 1 ? byColumn[r + 1][col] : null, 'u')
+      );
+      if (!one) {
+        warn('מרצפת מתפצלת נותרה ללא עיגול פינות, משום שלא ניתן היה לקבוע לאיזה צד להטות את הפינה בלי לשבור את הקו העובר.');
+      } else {
+        const V = ['u', 'd'].filter((d) => cell.segs[d]).length;
+        const H = ['l', 'r'].filter((d) => cell.segs[d]).length;
+        const vertical = one === 'u' || one === 'd';
+        // כשיש קטע אחד בלבד בצדו של הציר, המרצפת המעוגלת המוכנה מדויקת
+        cell.wiki = (vertical ? V : H) === 1
+          ? tileWiki(cell.segs, { ...cell.tileOpts, round: true })
+          : composedJunction(cell.segs, one, cell.tileOpts);
+        cell.corner = one;
       }
       col += cell.width;
     }

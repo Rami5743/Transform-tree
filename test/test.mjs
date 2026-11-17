@@ -180,14 +180,15 @@ eq(convert('{{עץ משפחה|!}}', { round: true }).wiki.includes('{{מרצפת
   ok(w.includes('{{פינה|3|עובי=2פק}}'), 'מרצפת ז שהפיצול מימינה מקבלת פינה 3', w);
 }
 {
-  // שני פיצולים — הקרוב מנצח
+  // פיצול משני הצדדים: שתי כניסות ויציאה אחת, והמיזוג כלפי מטה הוא הנכון
   const w = convert('{{עץ משפחה|^|-|ז|-|-|-|^}}', { round: true }).wiki;
-  ok(w.includes('{{פינה|3|עובי=2פק}}'), 'מבין שני פיצולים נבחר הקרוב', w);
+  ok(w.includes('{{מרצפת|זע}}'), 'שתי כניסות ויציאה אחת ממוזגות כלפי מטה', w);
 }
 {
-  const r = convert('{{עץ משפחה|.|-|ז|-|,}}', { round: true });
-  ok(r.wiki.includes('{{מרצפת|ז}}'), 'בלי פיצול בשורה — מרצפת ז ללא עיגול', r.wiki);
-  ok(r.warnings.some((w) => w.includes('ללא עיגול פינות')), 'ומדווחת אזהרה');
+  // קו בין בני זוג: שני הקצוות מגיעים לתיבות ואין צד יחיד
+  const r = convert('{{עץ משפחה|א|-|-|ז|-|-|ב|א=מינה|ב=הירשל}}', { round: true });
+  ok(r.wiki.includes('{{מרצפת|ז}}'), 'קו בין בני זוג נשאר חד', r.wiki);
+  ok(r.warnings.some((w) => w.includes('לא ניתן היה לקבוע')), 'ומדווחת אזהרה');
 }
 {
   const w = convert('{{עץ משפחה|.|-|ז|-|^|-|,}}', { round: false }).wiki;
@@ -231,9 +232,11 @@ eq(convert('{{עץ משפחה| | |!}}\n{{עץ משפחה|,|-|(}}', { round: true
   ok(w.includes('{{פינה|1|עובי=2פק}}'), 'מקור מלמטה — פינה 1', w);
 }
 {
-  const r = convert('{{עץ משפחה|)|-|,}}', { round: true });
-  ok(r.wiki.includes('{{מרצפת|)}}'), 'בלי מקור — המרצפת נשארת חדה', r.wiki);
-  ok(r.warnings.some((w) => w.includes('לא נמצא לה המקור')), 'ומדווחת אזהרה');
+  // שתי כניסות — מלמעלה ומן הקו המאוזן — ויציאה אחת כלפי מטה:
+  // הענף המאוזן מתעגל כלפי היציאה ולא כלפי המקור
+  const w = convert("{{עץ משפחה| | |'|-|-|(}}", { round: true }).wiki;
+  ok(w.includes('{{פינה|3'), 'ענף מאוזן שמגיע ממקור מתעגל כלפי היציאה', w);
+  ok(!w.includes('{{פינה|9'), 'ואינו מתעגל כלפי המקור', w);
 }
 eq(convert('{{עץ משפחה|!}}\n{{עץ משפחה|)|-|,}}', { round: false }).wiki.includes('{{מרצפת|)}}'),
   true, 'בלי עיגול פינות — מרצפת ) רגילה');
@@ -289,6 +292,15 @@ ok(convert('').warnings.length === 1 && convert('').wiki === '', 'קלט ריק 
   const html = renderPreview(convert('{{עץ משפחה|א|-|ב|א=אחד|ב=שתיים}}').wiki);
   ok((html.match(/pv-boxcell/g) || []).length === 2, 'שתי תיבות בתצוגה');
   ok(html.includes('pv-p'), 'והמרצפת שביניהן מצוירת');
+}
+{
+  const html = renderPreview(convert('{{עץ משפחה|א|א=שם{{ש}}<small>(הערה)</small>}}').wiki);
+  ok(html.includes('<small>(הערה)</small>'), 'תגית עיצוב פנימית מוצגת ואינה מוברחת', html.slice(0, 300));
+  ok(html.includes('<br>'), 'ותבנית ש הופכת לשבירת שורה');
+}
+{
+  const html = renderPreview(convert('{{עץ משפחה|א|א=<script>x</script>}}').wiki);
+  ok(!html.includes('<script>'), 'תגית שאינה ברשימה מוברחת', html.slice(0, 300));
 }
 eq(renderPreview('').includes('אין מה להציג'), true, 'פלט ריק אינו מקריס את התצוגה');
 
