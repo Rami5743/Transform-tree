@@ -193,18 +193,46 @@ function cellPrims(text) {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+/** תבניות שתפקידן לסמן קישור לוויקיפדיה בשפה אחרת. */
+const LANG_LINK = /^(?:אנ|אנ2|אנג|גר|צר|ספ|רו|ער|en|Interlanguage link)$/i;
+/** תבניות שאין להן תוכן נראה בתוך תיבה. */
+const INVISIBLE = /^(?:הערה|ref|מיון רגיל|קטגוריה|DEFAULTSORT)$/i;
+
+/**
+ * פורש תבניות שבתוך טקסט של תיבה, מבפנים כלפי חוץ.
+ *
+ * תבנית עוטפת כמו {{ללא גלישה|טקסט}} או {{כתב מוקטן|טקסט}} מוחלפת בתוכנה,
+ * ולא נמחקת: מחיקתה מרוקנת את התיבה. הכלל הכללי הוא שתבנית בעלת פרמטר
+ * ממוספר יחיד היא עוטפת.
+ */
+function expandTemplates(t) {
+  for (let pass = 0; pass < 8; pass++) {
+    const next = t.replace(/\{\{([^{}]*)\}\}/g, (all, inner) => {
+      const parts = splitTopLevel(inner, '|');
+      const name = parts[0].trim();
+      if (/^(?:ש|break|br)$/i.test(name)) return '\u0001BR\u0001';
+      if (LANG_LINK.test(name)) return '\u0001LANG\u0001';
+      if (INVISIBLE.test(name)) return '';
+      const positional = parts.slice(1).filter((x) => !/^[^=]{1,30}=/.test(x));
+      return positional.length === 1 ? positional[0] : '';
+    });
+    if (next === t) return t;
+    t = next;
+  }
+  return t;
+}
+
 /** רינדור גס של קוד ויקי לתצוגה. קבצים מוחלפים בסימן מקום. */
 function wikiText(text) {
-  let t = String(text || '');
-  t = t.replace(/\{\{\s*(?:ש|break|br)\s*\}\}/g, '\u0001BR\u0001');
+  let t = expandTemplates(String(text || ''));
   t = t.replace(/<br\s*\/?>/gi, '\u0001BR\u0001');
   t = t.replace(/\[\[\s*(?:תמונה|קובץ|File|Image)\s*:[^\]]*\]\]/gi, '\u0001IMG\u0001');
   t = t.replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2');
   t = t.replace(/\[\[([^\]]*)\]\]/g, '$1');
-  t = t.replace(/\{\{[^{}]*\}\}/g, '');
   t = esc(t);
   t = t.replace(/'''(.*?)'''/g, '<b>$1</b>').replace(/''(.*?)''/g, '<i>$1</i>');
   return t.split('\u0001IMG\u0001').join('<span class="pv-img" title="קובץ"></span>')
+    .split('\u0001LANG\u0001').join('<span class="pv-lang">(אנ)</span>')
     .split('\u0001BR\u0001').join('<br>');
 }
 

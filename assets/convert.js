@@ -81,14 +81,32 @@ const ROW_NAME = String.raw`עץ[ _]+משפחה|family\s*tree`;
 const RE_ROW = new RegExp(String.raw`\{\{\s*(?:${ROW_NAME})\s*(?=[|}])`, 'giu');
 const RE_START = new RegExp(String.raw`\{\{\s*(?:${ROW_NAME})\s*/\s*(התחלה|סוף|start|end)\s*(?=[|}])`, 'giu');
 
-/** מאתר את ה-}} הסוגר של תבנית שמתחילה ב-start (האינדקס של "{{"). */
+/**
+ * מאתר את ה-}} הסוגר של תבנית שמתחילה ב-start (האינדקס של "{{").
+ *
+ * הסגירה נבדקת מול מה שנפתח, ולא לפי מספר הסוגריים הרצופים. רצף כמו
+ * "}}}}" בסוף "{{א|{{ב|ג}}}}" הוא שתי סגירות של "{{", ולא סגירה של
+ * "{{{" ועוד סוגר בודד; ספירה תמימה שלו מחליקה מעבר לסוף התבנית ובולעת
+ * את מה שבא אחריה.
+ */
 function matchTemplateEnd(text, start) {
-  let depth = 0, i = start;
+  const stack = [];
+  let i = start;
   while (i < text.length) {
-    if (text.startsWith('{{{', i)) { depth++; i += 3; continue; }
-    if (text.startsWith('}}}', i)) { depth--; i += 3; if (depth === 0) return i; continue; }
-    if (text.startsWith('{{', i)) { depth++; i += 2; continue; }
-    if (text.startsWith('}}', i)) { depth--; i += 2; if (depth === 0) return i; continue; }
+    if (text.startsWith('{{{', i)) { stack.push(3); i += 3; continue; }
+    if (text.startsWith('{{', i)) { stack.push(2); i += 2; continue; }
+    if (stack.length) {
+      if (stack[stack.length - 1] === 3 && text.startsWith('}}}', i)) {
+        stack.pop(); i += 3;
+        if (!stack.length) return i;
+        continue;
+      }
+      if (text.startsWith('}}', i)) {
+        stack.pop(); i += 2;
+        if (!stack.length) return i;
+        continue;
+      }
+    }
     i++;
   }
   return -1;
@@ -115,10 +133,14 @@ export function extractRows(text) {
     last = Math.max(last, end);
   }
 
+  // קריאה לתבנית בתוך פרמטר של שורה אחרת אינה שורה בפני עצמה
+  let consumedTo = 0;
   for (const m of [...text.matchAll(RE_ROW)]) {
+    if (m.index < consumedTo) continue;
     if (taken.some(([a, b]) => m.index >= a && m.index < b)) continue;
     const end = matchTemplateEnd(text, m.index);
     if (end === -1) continue;
+    consumedTo = end;
     let inner = text.slice(m.index + m[0].length, end - 2);
     inner = inner.replace(/^\|/, '');
     rows.push(inner);
@@ -129,6 +151,40 @@ export function extractRows(text) {
   const before = rows.length ? text.slice(0, first) : '';
   const after = rows.length ? text.slice(last) : '';
   return { rows, wrappers, before, after };
+}
+
+/**
+ * מאתר תבניות שנפתחו לפני העץ ולא נסגרו עד אחריו, ומסיר אותן.
+ *
+ * טבלת {{תרשים}} נכתבת בתחביר טבלה של ויקי, ותחביר כזה אינו יכול לשבת
+ * בתוך פרמטר של תבנית. עץ העטוף בתבנית כמו {{כתב מוקטן}} היה מפיק פלט
+ * שבור, ולכן העטיפה מוסרת ומדווחת.
+ */
+export function unwrap(before, after) {
+  const stack = [];
+  let i = 0;
+  while (i < before.length) {
+    if (before.startsWith('{{{', i)) { stack.push({ d: 3, i }); i += 3; continue; }
+    if (before.startsWith('{{', i)) { stack.push({ d: 2, i }); i += 2; continue; }
+    if (stack.length) {
+      if (stack[stack.length - 1].d === 3 && before.startsWith('}}}', i)) { stack.pop(); i += 3; continue; }
+      if (before.startsWith('}}', i)) { stack.pop(); i += 2; continue; }
+    }
+    i++;
+  }
+  if (!stack.length) return { before, after, wrappers: [] };
+
+  const names = stack.map((t) => {
+    const m = /^\{\{+\s*([^|{}\n]{1,60})/.exec(before.slice(t.i));
+    return m ? m[1].trim() : '';
+  });
+  let rest = after;
+  for (let k = stack.length - 1; k >= 0; k--) {
+    const m = new RegExp('^\\s*' + (stack[k].d === 3 ? '\\}\\}\\}' : '\\}\\}')).exec(rest);
+    if (!m) break;
+    rest = rest.slice(m[0].length);
+  }
+  return { before: before.slice(0, stack[0].i), after: rest, wrappers: names.filter(Boolean) };
 }
 
 /* ------------------------------------------------------------------ *
@@ -373,7 +429,8 @@ export function convert(input, userOpts = {}) {
   const warnings = [];
   const warn = (msg) => { if (!warnings.includes(msg)) warnings.push(msg); };
 
-  const { rows: rawRows, wrappers, before, after } = extractRows(input || '');
+  const { rows: rawRows, wrappers, before: rawBefore, after: rawAfter } = extractRows(input || '');
+  const { before, after, wrappers: outerTemplates } = unwrap(rawBefore, rawAfter);
   for (const w of wrappers) {
     if ((w.kind === 'התחלה' || w.kind === 'start') && w.inner.trim()) {
       const { named } = parseRow(w.inner);
@@ -479,7 +536,10 @@ export function convert(input, userOpts = {}) {
       } else {
         // ----- תיבה -----
         const key = trimmed;
-        const text = boxes[key] !== undefined ? boxes[key] : '';
+        // שורה חדשה בתוך ערך של פרמטר מוצגת ברווח בלבד, אך בתוך תא של
+        // טבלת ויקי היא עלולה לשבור את התא. איחודה לרווח אינו משנה דבר
+        // בתצוגה ומייצב את הפלט.
+        const text = (boxes[key] !== undefined ? boxes[key] : '').replace(/\s*\n\s*/g, ' ');
         if (boxes[key] === undefined) warn(`לתיבה "${key}" אין טקסט מוגדר בשורה; נוצרה תיבה ריקה.`);
         const styleBits = [rowStyle, boxStyles[key]].filter((s) => s && s.trim());
         const params = ['טקסט=' + text];
@@ -550,6 +610,9 @@ export function convert(input, userOpts = {}) {
   // --- בניית קוד הוויקי ---
   const lines = [];
   if (opts.wrap) lines.push('{{תרשים}}');
+  for (const name of outerTemplates) {
+    warn(`העץ היה עטוף בתבנית "${name}". טבלת תרשים אינה יכולה לשבת בתוך פרמטר של תבנית, ולכן העטיפה הושמטה מהפלט.`);
+  }
   const lead = (before || '').trim();
   const tail = (after || '').trim();
   if (opts.keepSurrounding && lead) lines.push(lead);

@@ -3,6 +3,7 @@
  */
 import { FT_TILES, MZ_TILES, DIRS, DIR_DIGIT, MZ_C2_DEFAULT } from '../assets/tiles.js';
 import { convert, splitTopLevel, parseRow, tileWiki, extractRows } from '../assets/convert.js';
+import { renderPreview } from '../assets/preview.js';
 
 let pass = 0, fail = 0;
 const ok = (cond, name, extra = '') => {
@@ -71,6 +72,39 @@ eq(extractRows('{{עץ משפחה/התחלה}}{{עץ משפחה|א}}{{עץ מש�
 eq(extractRows('{{עץ_משפחה|א}}').rows.length, 1, 'שם התבנית עם קו תחתון');
 eq(extractRows('{{ עץ משפחה |א}}').rows.length, 1, 'שם התבנית עם רווחים');
 eq(extractRows('{{עץ משפחה|א={{עץ משפחה|ב}}}}').rows.length, 1, 'תבנית מקוננת אינה נספרת פעמיים');
+
+/* =============== 3ב. סוגריים צמודים בסוף שורה =============== */
+{
+  // "}}}}" בסוף שורה הוא שתי סגירות של "{{", לא סגירה של "{{{" ועוד סוגר
+  const src = '{{עץ משפחה|א|א={{ללא גלישה|שם}}}}\n{{עץ משפחה|ב|ב=שני}}';
+  eq(extractRows(src).rows.length, 2, 'שורה המסתיימת בתבנית מקוננת אינה בולעת את הבאה אחריה');
+  const r = convert(src);
+  ok(r.wiki.includes('טקסט={{ללא גלישה|שם}}'), 'תוכן התיבה נשמר', r.wiki);
+  ok(r.wiki.includes('טקסט=שני'), 'השורה הבאה לא אבדה', r.wiki);
+}
+{
+  // שלוש רמות של קינון
+  const src = "{{עץ משפחה|א|א={{ללא גלישה|[[ד]] {{אנ|D}}}}}}\n{{עץ משפחה|ב|ב=שני}}";
+  eq(extractRows(src).rows.length, 2, 'גם שלוש רמות של קינון נסגרות נכון');
+}
+eq(extractRows('{{עץ משפחה|א={{{פרמטר|ברירה}}}}}').rows.length, 1, 'הפניה לפרמטר עם שלושה סוגריים');
+
+/* =============== 3ג. שורה חדשה בתוך טקסט תיבה =============== */
+{
+  const w = convert('{{עץ משפחה|א|א=שורה\nשנייה}}').wiki;
+  ok(w.includes('טקסט=שורה שנייה'), 'שורה חדשה בטקסט תיבה מתאחדת לרווח', w);
+  ok(!/טקסט=שורה\n/.test(w), 'ואינה שוברת את תא הטבלה', w);
+}
+
+/* =============== 3ד. עץ העטוף בתבנית =============== */
+{
+  const plain = '{{עץ משפחה/התחלה}}\n{{עץ משפחה|א|א=ט}}\n{{עץ משפחה/סוף}}';
+  const wrapped = '{{כתב מוקטן|{{כתב מוקטן|' + plain + '}}}}\n{{מקרא|#aaf|הסבר}}';
+  const r = convert(wrapped);
+  eq(r.wiki, convert(plain + '\n{{מקרא|#aaf|הסבר}}').wiki, 'עטיפה בתבנית מוסרת והפלט זהה');
+  ok(r.warnings.some((w) => w.includes('כתב מוקטן')), 'והעטיפה שהוסרה מדווחת');
+  ok(!r.wiki.includes('כתב מוקטן'), 'ואינה נשארת בפלט', r.wiki);
+}
 
 /* =============== 4. כל מרצפת מתורגמת נכון =============== */
 for (const [ch, def] of Object.entries(FT_TILES)) {
@@ -241,6 +275,22 @@ ok(convert('').warnings.length === 1 && convert('').wiki === '', 'קלט ריק 
   const w = convert('{{עץ משפחה|א|א=ט}}', { changeBoxColor: true, boxColor: 'לבן', changeBoxBoundary: true, boundaryColor: 'blue' }).wiki;
   ok(w.includes('צבע רקע=לבן') && w.includes('צבע מסגרת=blue'), 'אפשרויות צבע התיבה', w);
 }
+
+/* =============== 16. התצוגה המקדימה =============== */
+{
+  const html = renderPreview(convert('{{עץ משפחה|א|א={{ללא גלישה|טמפרנס גורהם}}}}').wiki);
+  ok(html.includes('טמפרנס גורהם'), 'תבנית עוטפת בטקסט התיבה נפרשת ואינה נמחקת', html.slice(0, 300));
+}
+{
+  const html = renderPreview(convert("{{עץ משפחה|א|א=[[ג'ון]] {{אנ|John}}}}").wiki);
+  ok(html.includes("ג'ון") && html.includes('pv-lang'), 'קישור בין־לשוני מסומן ואינו מוחק את הטקסט', html.slice(0, 300));
+}
+{
+  const html = renderPreview(convert('{{עץ משפחה|א|-|ב|א=אחד|ב=שתיים}}').wiki);
+  ok((html.match(/pv-boxcell/g) || []).length === 2, 'שתי תיבות בתצוגה');
+  ok(html.includes('pv-p'), 'והמרצפת שביניהן מצוירת');
+}
+eq(renderPreview('').includes('אין מה להציג'), true, 'פלט ריק אינו מקריס את התצוגה');
 
 console.log(`\n${pass} בדיקות עברו, ${fail} נכשלו.`);
 process.exit(fail ? 1 : 0);
