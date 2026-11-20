@@ -135,7 +135,7 @@ button.ghost:hover, button.primary:hover { filter: brightness(1.08); }
   z-index: 2;
   box-sizing: border-box;
   min-height: 1.2em;
-  max-width: 10em;
+  max-width: 18em;
   color: #16181d;
   font-size: 0.72rem;
   line-height: 1.3;

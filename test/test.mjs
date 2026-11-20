@@ -302,6 +302,16 @@ ok(convert('').warnings.length === 1 && convert('').wiki === '', 'קלט ריק 
   const html = renderPreview(convert('{{עץ משפחה|א|א=<script>x</script>}}').wiki);
   ok(!html.includes('<script>'), 'תגית שאינה ברשימה מוברחת', html.slice(0, 300));
 }
+{
+  // תבנית שהטקסט הנראה שלה יושב בפרמטר שמי
+  const html = renderPreview(convert('{{עץ משפחה|א|א=שם {{עיצוב גופן|גודל=1|צבע=ירוק|טקסט=הערה}}}}').wiki);
+  ok(html.includes('הערה'), 'טקסט שבפרמטר שמי אינו נמחק', html.slice(0, 400));
+  ok(html.includes('color:green'), 'ופרמטר הצבע מועבר לתצוגה', html.slice(0, 400));
+}
+{
+  const r = convert('{{עץ משפחה/התחלה|עיצוב=border-collapse:collapse}}\n{{עץ משפחה|-}}\n{{עץ משפחה/סוף}}');
+  ok(r.warnings.some((w) => w.includes('אינו נחוץ')), 'border-collapse מדווח כמיותר ולא כדורש הגדרה ידנית', r.warnings.join(' | '));
+}
 eq(renderPreview('').includes('אין מה להציג'), true, 'פלט ריק אינו מקריס את התצוגה');
 
 console.log(`\n${pass} בדיקות עברו, ${fail} נכשלו.`);

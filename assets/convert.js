@@ -444,8 +444,14 @@ export function convert(input, userOpts = {}) {
   for (const w of wrappers) {
     if ((w.kind === 'התחלה' || w.kind === 'start') && w.inner.trim()) {
       const { named } = parseRow(w.inner);
-      for (const k of Object.keys(named)) {
-        warn(`הפרמטר "${k}" של {{עץ משפחה/התחלה}} חל על הטבלה כולה ואין לו מקבילה ישירה ב{{תרשים}}; יש להגדיר אותו ידנית.`);
+      for (const [k, v] of Object.entries(named)) {
+        // border-collapse:collapse הוא עקיפה של תקלת תצוגה ב{{עץ משפחה}};
+        // ב{{תרשים}} הוא כבר בררת המחדל של הטבלה ואין צורך להעתיקו
+        if (k === 'עיצוב' && /^\s*border-collapse\s*:\s*collapse\s*;?\s*$/i.test(v)) {
+          warn('הפרמטר "עיצוב=border-collapse:collapse" של {{עץ משפחה/התחלה}} אינו נחוץ: בתבנית {{תרשים}} זו כבר בררת המחדל.');
+        } else {
+          warn(`הפרמטר "${k}" של {{עץ משפחה/התחלה}} חל על הטבלה כולה ואין לו מקבילה ישירה ב{{תרשים}}; יש להגדיר אותו ידנית.`);
+        }
       }
     }
   }

@@ -198,12 +198,16 @@ const LANG_LINK = /^(?:אנ|אנ2|אנג|גר|צר|ספ|רו|ער|en|Interlangua
 /** תבניות שאין להן תוכן נראה בתוך תיבה. */
 const INVISIBLE = /^(?:הערה|ref|מיון רגיל|קטגוריה|DEFAULTSORT)$/i;
 
+/** שמות הפרמטרים שבהם תבניות עיצוב נוהגות להחזיק את הטקסט הנראה. */
+const TEXT_PARAM = /^(?:טקסט|תוכן|כיתוב|text|content)$/i;
+
 /**
  * פורש תבניות שבתוך טקסט של תיבה, מבפנים כלפי חוץ.
  *
- * תבנית עוטפת כמו {{ללא גלישה|טקסט}} או {{כתב מוקטן|טקסט}} מוחלפת בתוכנה,
- * ולא נמחקת: מחיקתה מרוקנת את התיבה. הכלל הכללי הוא שתבנית בעלת פרמטר
- * ממוספר יחיד היא עוטפת.
+ * תבנית עוטפת כמו {{ללא גלישה|טקסט}} או {{עיצוב גופן|צבע=ירוק|טקסט=...}}
+ * מוחלפת בתוכנה, ולא נמחקת: מחיקתה מרוקנת את התיבה. הטקסט הנראה הוא
+ * הפרמטר הממוספר היחיד, ואם אין כזה — פרמטר שמי שנהוג להחזיק בו טקסט.
+ * פרמטר "צבע" מועבר לתצוגה.
  */
 function expandTemplates(t) {
   for (let pass = 0; pass < 8; pass++) {
@@ -213,8 +217,25 @@ function expandTemplates(t) {
       if (/^(?:ש|break|br)$/i.test(name)) return '\u0001BR\u0001';
       if (LANG_LINK.test(name)) return '\u0001LANG\u0001';
       if (INVISIBLE.test(name)) return '';
-      const positional = parts.slice(1).filter((x) => !/^[^=]{1,30}=/.test(x));
-      return positional.length === 1 ? positional[0] : '';
+
+      const positional = [];
+      const named = Object.create(null);
+      for (const part of parts.slice(1)) {
+        const e = part.indexOf('=');
+        const key = e > 0 ? part.slice(0, e).trim() : '';
+        if (e > 0 && key && !/[[\]{}|]/.test(key)) named[key] = part.slice(e + 1);
+        else positional.push(part);
+      }
+
+      let text = null;
+      if (positional.length === 1) text = positional[0];
+      else if (!positional.length) {
+        const key = Object.keys(named).find((k) => TEXT_PARAM.test(k));
+        if (key) text = named[key];
+      }
+      if (text === null) return '';
+      const color = Object.keys(named).find((k) => /^(?:צבע|color)$/i.test(k));
+      return color ? `\u0002${toCss(named[color], 'inherit')}\u0002${text}\u0003` : text;
     });
     if (next === t) return t;
     t = next;
@@ -235,6 +256,8 @@ function wikiText(text) {
   t = esc(t);
   t = t.replace(/'''(.*?)'''/g, '<b>$1</b>').replace(/''(.*?)''/g, '<i>$1</i>');
   t = t.replace(/\u0001T(\/?)([a-z]+)\u0001/g, '<$1$2>');
+  t = t.replace(/\u0002([^\u0002\u0003]*)\u0002/g, (m, c) => `<span style="color:${c.replace(/[^a-zA-Z0-9#(),.% -]/g, '')}">`)
+       .replace(/\u0003/g, '</span>');
   return t.split('\u0001IMG\u0001').join('<span class="pv-img" title="קובץ"></span>')
     .split('\u0001LANG\u0001').join('<span class="pv-lang">(אנ)</span>')
     .split('\u0001BR\u0001').join('<br>');
